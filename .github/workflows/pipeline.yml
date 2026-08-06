@@ -34,12 +34,14 @@ permissions:
 
 env:
   BUCKET_NAME: ${{ vars.BUCKET_NAME }}
-  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_REGION: us-east-1
 
 jobs:
   # Normaliza los inputs de workflow_dispatch y de schedule a un único conjunto de
   # valores (contracts/workflow-dispatch-inputs.md) que el resto de los jobs consume.
   resolve:
+    env:
+      AWS_REGION: us-east-1
     runs-on: ubuntu-latest
     outputs:
       start_date: ${{ steps.resolve.outputs.start_date }}
@@ -63,6 +65,8 @@ jobs:
           fi
 
   generate:
+    env:
+      AWS_REGION: us-east-1
     needs: resolve
     if: needs.resolve.outputs.start_stage == 'generate'
     runs-on: ubuntu-latest
@@ -78,7 +82,7 @@ jobs:
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
       - name: Generate simulated tuning events (raw/fecha=.../)
         run: |
           python -m src.generator.events \
@@ -89,6 +93,8 @@ jobs:
             --bucket "${{ env.BUCKET_NAME }}"
 
   bronze:
+    env:
+      AWS_REGION: us-east-1
     needs: [resolve, generate]
     if: |
       always() &&
@@ -107,7 +113,7 @@ jobs:
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
       - name: Validate and normalize into bronze
         run: |
           python -m src.bronze.ingest \
@@ -116,6 +122,8 @@ jobs:
             --end-date "${{ needs.resolve.outputs.end_date }}"
 
   silver:
+    env:
+      AWS_REGION: us-east-1
     needs: [resolve, bronze]
     if: |
       always() &&
@@ -134,7 +142,7 @@ jobs:
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
       - name: Deduplicate and clean into silver
         run: |
           python -m src.silver.clean \
@@ -143,6 +151,8 @@ jobs:
             --end-date "${{ needs.resolve.outputs.end_date }}"
 
   gold:
+    env:
+      AWS_REGION: us-east-1
     needs: [resolve, silver]
     if: always() && (needs.silver.result == 'success' || needs.silver.result == 'skipped')
     runs-on: ubuntu-latest
@@ -158,7 +168,7 @@ jobs:
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
       - name: Aggregate Rating%/Share% into gold
         run: |
           python -m src.gold.metrics \
@@ -170,6 +180,8 @@ jobs:
   # IV) — usan un prefijo `_integration_tests/<uuid>` descartable, independiente del
   # rango de fechas real procesado arriba.
   integration_tests:
+    env:
+      AWS_REGION: us-east-1
     needs: [resolve, gold]
     if: always() && (needs.gold.result == 'success' || needs.gold.result == 'skipped')
     runs-on: ubuntu-latest
@@ -185,6 +197,6 @@ jobs:
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
       - name: Run unit + integration tests (integration tests hit real S3)
         run: pytest tests -v
