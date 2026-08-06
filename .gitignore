@@ -1,0 +1,24 @@
+.claude/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+dist/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Environment
+.env
+.env.*
+
+# Pipeline local scratch directory (CLI --work-dir default)
+_work/
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+

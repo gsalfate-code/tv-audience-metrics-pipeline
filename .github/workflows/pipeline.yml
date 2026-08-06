@@ -1,0 +1,190 @@
+name: TV Audience Metrics Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: "Primera fecha del rango a procesar (YYYY-MM-DD)"
+        required: true
+        type: string
+      end_date:
+        description: "Última fecha del rango a procesar (YYYY-MM-DD); por defecto igual a start_date"
+        required: false
+        type: string
+      start_stage:
+        description: "Etapa desde la que arranca la corrida"
+        required: false
+        type: choice
+        default: generate
+        options:
+          - generate
+          - bronze
+          - silver
+          - gold
+      seed:
+        description: "Semilla del generador de eventos (solo aplica si start_stage=generate)"
+        required: false
+        type: string
+        default: "42"
+  schedule:
+    - cron: "0 6 * * *" # diario 06:00 UTC; procesa la fecha del día en curso
+
+permissions:
+  contents: read
+
+env:
+  BUCKET_NAME: ${{ vars.BUCKET_NAME }}
+  AWS_REGION: ${{ vars.AWS_REGION }}
+
+jobs:
+  # Normaliza los inputs de workflow_dispatch y de schedule a un único conjunto de
+  # valores (contracts/workflow-dispatch-inputs.md) que el resto de los jobs consume.
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      start_date: ${{ steps.resolve.outputs.start_date }}
+      end_date: ${{ steps.resolve.outputs.end_date }}
+      start_stage: ${{ steps.resolve.outputs.start_stage }}
+      seed: ${{ steps.resolve.outputs.seed }}
+    steps:
+      - id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "start_date=${{ inputs.start_date }}" >> "$GITHUB_OUTPUT"
+            echo "end_date=${{ inputs.end_date != '' && inputs.end_date || inputs.start_date }}" >> "$GITHUB_OUTPUT"
+            echo "start_stage=${{ inputs.start_stage }}" >> "$GITHUB_OUTPUT"
+            echo "seed=${{ inputs.seed }}" >> "$GITHUB_OUTPUT"
+          else
+            TODAY="$(date -u +%F)"
+            echo "start_date=${TODAY}" >> "$GITHUB_OUTPUT"
+            echo "end_date=${TODAY}" >> "$GITHUB_OUTPUT"
+            echo "start_stage=generate" >> "$GITHUB_OUTPUT"
+            echo "seed=42" >> "$GITHUB_OUTPUT"
+          fi
+
+  generate:
+    needs: resolve
+    if: needs.resolve.outputs.start_stage == 'generate'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Generate simulated tuning events (raw/fecha=.../)
+        run: |
+          python -m src.generator.events \
+            --seed "${{ needs.resolve.outputs.seed }}" \
+            --start-date "${{ needs.resolve.outputs.start_date }}" \
+            --end-date "${{ needs.resolve.outputs.end_date }}" \
+            --out _work/generated \
+            --bucket "${{ env.BUCKET_NAME }}"
+
+  bronze:
+    needs: [resolve, generate]
+    if: |
+      always() &&
+      (needs.generate.result == 'success' || needs.generate.result == 'skipped') &&
+      (needs.resolve.outputs.start_stage == 'generate' || needs.resolve.outputs.start_stage == 'bronze')
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Validate and normalize into bronze
+        run: |
+          python -m src.bronze.ingest \
+            --bucket "${{ env.BUCKET_NAME }}" \
+            --start-date "${{ needs.resolve.outputs.start_date }}" \
+            --end-date "${{ needs.resolve.outputs.end_date }}"
+
+  silver:
+    needs: [resolve, bronze]
+    if: |
+      always() &&
+      (needs.bronze.result == 'success' || needs.bronze.result == 'skipped') &&
+      needs.resolve.outputs.start_stage != 'gold'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Deduplicate and clean into silver
+        run: |
+          python -m src.silver.clean \
+            --bucket "${{ env.BUCKET_NAME }}" \
+            --start-date "${{ needs.resolve.outputs.start_date }}" \
+            --end-date "${{ needs.resolve.outputs.end_date }}"
+
+  gold:
+    needs: [resolve, silver]
+    if: always() && (needs.silver.result == 'success' || needs.silver.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Aggregate Rating%/Share% into gold
+        run: |
+          python -m src.gold.metrics \
+            --bucket "${{ env.BUCKET_NAME }}" \
+            --start-date "${{ needs.resolve.outputs.start_date }}" \
+            --end-date "${{ needs.resolve.outputs.end_date }}"
+
+  # Único lugar donde corren los tests marcados `integration` (constitución, Principio
+  # IV) — usan un prefijo `_integration_tests/<uuid>` descartable, independiente del
+  # rango de fechas real procesado arriba.
+  integration_tests:
+    needs: [resolve, gold]
+    if: always() && (needs.gold.result == 'success' || needs.gold.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Run unit + integration tests (integration tests hit real S3)
+        run: pytest tests -v
