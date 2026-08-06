@@ -134,7 +134,7 @@ jobs:
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ vars.AWS_REGION }}
       - name: Deduplicate and clean into silver
         run: |
           python -m src.silver.clean \
