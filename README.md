@@ -2,7 +2,9 @@
 
 POC: TV audience metrics pipeline (Rating% &amp; Share%) using Medallion architecture (Bronze→Silver→Gold), DuckDB, AWS S3, and GitHub Actions. Simple, deterministic, and idempotent data engineering.
 
-See [`specs/001-audience-metrics-poc/`](specs/001-audience-metrics-poc/) for the full
+See [`DOCUMENTATION.md`](DOCUMENTATION.md) for the consolidated technical reference
+(architecture, data model, module reference, security, CI/CD). See
+[`specs/001-audience-metrics-poc/`](specs/001-audience-metrics-poc/) for the full
 spec, plan, and design docs, and
 [`specs/001-audience-metrics-poc/quickstart.md`](specs/001-audience-metrics-poc/quickstart.md)
 for the end-to-end validation guide (local + real AWS).
