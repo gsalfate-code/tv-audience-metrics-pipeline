@@ -38,7 +38,6 @@ permissions:
   contents: read
 
 env:
-  BUCKET_NAME: ${{ vars.BUCKET_NAME }}
   AWS_REGION: ${{ github.event.inputs.aws_region || vars.AWS_REGION }}
 
 jobs:
@@ -96,7 +95,7 @@ jobs:
             --start-date "${{ needs.resolve.outputs.start_date }}" \
             --end-date "${{ needs.resolve.outputs.end_date }}" \
             --out _work/generated \
-            --bucket "${{ env.BUCKET_NAME }}"
+            --bucket "${{ secrets.BUCKET_NAME }}"
 
   bronze:
     env:
@@ -124,7 +123,7 @@ jobs:
       - name: Validate and normalize into bronze
         run: |
           python -m src.bronze.ingest \
-            --bucket "${{ env.BUCKET_NAME }}" \
+            --bucket "${{ secrets.BUCKET_NAME }}" \
             --start-date "${{ needs.resolve.outputs.start_date }}" \
             --end-date "${{ needs.resolve.outputs.end_date }}"
 
@@ -154,7 +153,7 @@ jobs:
       - name: Deduplicate and clean into silver
         run: |
           python -m src.silver.clean \
-            --bucket "${{ env.BUCKET_NAME }}" \
+            --bucket "${{ secrets.BUCKET_NAME }}" \
             --start-date "${{ needs.resolve.outputs.start_date }}" \
             --end-date "${{ needs.resolve.outputs.end_date }}"
 
@@ -181,7 +180,7 @@ jobs:
       - name: Aggregate Rating%/Share% into gold
         run: |
           python -m src.gold.metrics \
-            --bucket "${{ env.BUCKET_NAME }}" \
+            --bucket "${{ secrets.BUCKET_NAME }}" \
             --start-date "${{ needs.resolve.outputs.start_date }}" \
             --end-date "${{ needs.resolve.outputs.end_date }}"
 
