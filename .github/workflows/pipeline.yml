@@ -209,3 +209,42 @@ jobs:
           aws-region: us-east-1
       - name: Run unit + integration tests (integration tests hit real S3)
         run: pytest tests -v
+
+  # Manda un resumen por correo al terminar la corrida, sea cual sea el resultado
+  # de cada etapa (always()) — así queda registro sin tener que entrar a Actions.
+  notify:
+    needs: [resolve, generate, bronze, silver, gold, integration_tests]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build summary
+        id: summary
+        run: |
+          {
+            echo "status<<EOF"
+            echo "Rango: ${{ needs.resolve.outputs.start_date }} -> ${{ needs.resolve.outputs.end_date }}"
+            echo "Etapa inicial: ${{ needs.resolve.outputs.start_stage }}"
+            echo ""
+            echo "generate:           ${{ needs.generate.result }}"
+            echo "bronze:             ${{ needs.bronze.result }}"
+            echo "silver:             ${{ needs.silver.result }}"
+            echo "gold:               ${{ needs.gold.result }}"
+            echo "integration_tests:  ${{ needs.integration_tests.result }}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          if [ "${{ contains(needs.*.result, 'failure') }}" = "true" ]; then
+            echo "outcome=FALLÓ" >> "$GITHUB_OUTPUT"
+          else
+            echo "outcome=OK" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Send email notification
+        uses: dawidd6/action-send-mail@v4
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.GMAIL_USERNAME }}
+          password: ${{ secrets.GMAIL_APP_PASSWORD }}
+          subject: "[TV Metrics Pipeline] ${{ steps.summary.outputs.outcome }} - ${{ needs.resolve.outputs.start_date }}"
+          to: gsalfate.code@gmail.com
+          from: "TV Metrics Pipeline <${{ secrets.GMAIL_USERNAME }}>"
+          body: ${{ steps.summary.outputs.status }}
