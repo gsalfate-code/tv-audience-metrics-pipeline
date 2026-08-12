@@ -95,6 +95,8 @@ Full walkthrough: [`specs/001-audience-metrics-poc/quickstart.md`](specs/001-aud
 
 | Resource | What's in it |
 |---|---|
+| [`docs/analisis-diseno.md`](docs/analisis-diseno.md) | Análisis y diseño (ES) — contexto, requisitos, historias de usuario, decisiones clave |
+| [`docs/manual-usuario.md`](docs/manual-usuario.md) | Manual de usuario (ES) — cómo disparar corridas, consultar resultados, solucionar problemas |
 | [`DOCUMENTATION.md`](DOCUMENTATION.md) | Consolidated technical reference — architecture, data model, module reference, security, CI/CD |
 | [`specs/001-audience-metrics-poc/`](specs/001-audience-metrics-poc/) | Full spec, plan, and design docs |
 | [`specs/001-audience-metrics-poc/quickstart.md`](specs/001-audience-metrics-poc/quickstart.md) | End-to-end validation guide (local + real AWS) |
