@@ -39,14 +39,14 @@ permissions:
 
 env:
   BUCKET_NAME: ${{ vars.BUCKET_NAME }}
-  AWS_REGION: ${{ github.event.inputs.aws_region }}
+  AWS_REGION: ${{ github.event.inputs.aws_region || vars.AWS_REGION }}
 
 jobs:
   # Normaliza los inputs de workflow_dispatch y de schedule a un único conjunto de
   # valores (contracts/workflow-dispatch-inputs.md) que el resto de los jobs consume.
   resolve:
     env:
-      AWS_REGION: ${{ github.event.inputs.aws_region }}
+      AWS_REGION: ${{ github.event.inputs.aws_region || vars.AWS_REGION }}
     runs-on: ubuntu-latest
     outputs:
       start_date: ${{ steps.resolve.outputs.start_date }}
@@ -71,7 +71,7 @@ jobs:
 
   generate:
     env:
-      AWS_REGION: ${{ github.event.inputs.aws_region }}
+      AWS_REGION: ${{ github.event.inputs.aws_region || vars.AWS_REGION }}
     needs: resolve
     if: needs.resolve.outputs.start_stage == 'generate'
     runs-on: ubuntu-latest
@@ -99,7 +99,7 @@ jobs:
 
   bronze:
     env:
-      AWS_REGION: ${{ github.event.inputs.aws_region }}
+      AWS_REGION: ${{ github.event.inputs.aws_region || vars.AWS_REGION }}
     needs: [resolve, generate]
     if: |
       always() &&
@@ -128,7 +128,7 @@ jobs:
 
   silver:
     env:
-      AWS_REGION: ${{ github.event.inputs.aws_region }}
+      AWS_REGION: ${{ github.event.inputs.aws_region || vars.AWS_REGION }}
     needs: [resolve, bronze]
     if: |
       always() &&
@@ -157,7 +157,7 @@ jobs:
 
   gold:
     env:
-      AWS_REGION: ${{ github.event.inputs.aws_region }}
+      AWS_REGION: ${{ github.event.inputs.aws_region || vars.AWS_REGION }}
     needs: [resolve, silver]
     if: always() && (needs.silver.result == 'success' || needs.silver.result == 'skipped')
     runs-on: ubuntu-latest
@@ -186,7 +186,7 @@ jobs:
   # rango de fechas real procesado arriba.
   integration_tests:
     env:
-      AWS_REGION: ${{ github.event.inputs.aws_region }}
+      AWS_REGION: ${{ github.event.inputs.aws_region || vars.AWS_REGION }}
     needs: [resolve, gold]
     if: always() && (needs.gold.result == 'success' || needs.gold.result == 'skipped')
     runs-on: ubuntu-latest
